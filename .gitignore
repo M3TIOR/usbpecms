@@ -1,0 +1,33 @@
+# Hide git folder from Neotree in Nvim
+# (there's probably a better way to do this, but I'm lazy)
+.git
+
+# Build files
+build
+
+# M4, Automake, Autoconf, ACLocal artifacts
+# Aka: general autotools trash unnecessary upstream.
+config.h
+m4
+autom4te.cache
+autoscan.log
+configure.scan
+**/Makefile
+**/Makefile.in
+configure
+config.status
+config.log
+config.guess
+config.sub
+aclocal.m4
+missing
+depcomp
+compile
+install-sh
+**/.deps
+**/.dirstamp
+**/stamp-h1
+**/*~
+
+# C artifacts
+**/*.o

@@ -1,0 +1,32 @@
+#!/bin/sh
+# @file - gdf-privkey-shim
+# @brief - A shim for utilites with migratory private data. Synchronizes
+#  private data using the chezmoi dotfiles manager. Uses git branches to
+#  track files based on their hostname.
+# @copyright (C) 2021  Ruby Allison Rose
+# SPDX-License-Identifier: GPL-3.0-only
+
+### Linter Directives ###
+# shellcheck shell=sh
+
+################################################################################
+## Globals
+
+SELF=$(readlink -nf "$0");
+PROCDIR="$(dirname "$SELF")";
+APPNAME="$(basename "$SELF")";
+
+################################################################################
+## Functions
+
+################################################################################
+## Main Script
+
+# TODO:
+#  * create configuration folder for different commands that use this script.
+#  * based on what this is called as, check if the binary exists in the system
+#    and use the configuration script for said command.
+#  * ensure the branch we're workin in is the hostname's branch.
+#  * back up files with chezmoi.
+#  * pass execution to said command.
+
