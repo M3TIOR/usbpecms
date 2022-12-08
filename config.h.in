@@ -1,40 +1,10 @@
 /* config.h.in.  Generated from configure.ac by autoheader.  */
 
-/* Define to the number of bits in type 'ptrdiff_t'. */
-#undef BITSIZEOF_PTRDIFF_T
-
-/* Define to the number of bits in type 'sig_atomic_t'. */
-#undef BITSIZEOF_SIG_ATOMIC_T
-
-/* Define to the number of bits in type 'size_t'. */
-#undef BITSIZEOF_SIZE_T
-
-/* Define to the number of bits in type 'wchar_t'. */
-#undef BITSIZEOF_WCHAR_T
-
-/* Define to the number of bits in type 'wint_t'. */
-#undef BITSIZEOF_WINT_T
-
 /* Define to 1 if bool, true and false work as per C2023. */
 #undef HAVE_C_BOOL
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
-
-/* Define to 1 if you have the <limits.h> header file. */
-#undef HAVE_LIMITS_H
-
-/* Define to 1 if the system has the type 'long long int'. */
-#undef HAVE_LONG_LONG_INT
-
-/* Define to 1 if 'sig_atomic_t' is a signed integer type. */
-#undef HAVE_SIGNED_SIG_ATOMIC_T
-
-/* Define to 1 if 'wchar_t' is a signed integer type. */
-#undef HAVE_SIGNED_WCHAR_T
-
-/* Define to 1 if 'wint_t' is a signed integer type. */
-#undef HAVE_SIGNED_WINT_T
 
 /* Define to 1 if you have the <stdbool.h> header file. */
 #undef HAVE_STDBOOL_H
@@ -57,12 +27,6 @@
 /* Define to 1 if you have the <systemd/sd-bus.h> header file. */
 #undef HAVE_SYSTEMD_SD_BUS_H
 
-/* Define to 1 if you have the <sys/bitypes.h> header file. */
-#undef HAVE_SYS_BITYPES_H
-
-/* Define to 1 if you have the <sys/inttypes.h> header file. */
-#undef HAVE_SYS_INTTYPES_H
-
 /* Define to 1 if you have the <sys/stat.h> header file. */
 #undef HAVE_SYS_STAT_H
 
@@ -71,15 +35,6 @@
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
-
-/* Define to 1 if the system has the type 'unsigned long long int'. */
-#undef HAVE_UNSIGNED_LONG_LONG_INT
-
-/* Define to 1 if you have the <wchar.h> header file. */
-#undef HAVE_WCHAR_H
-
-/* Define if you have the 'wint_t' type. */
-#undef HAVE_WINT_T
 
 /* Define to 1 if ctype.h defines __header_inline. */
 #undef HAVE___HEADER_INLINE
@@ -210,24 +165,6 @@
 /* Define to the version of this package. */
 #undef PACKAGE_VERSION
 
-/* Define to l, ll, u, ul, ull, etc., as suitable for constants of type
-   'ptrdiff_t'. */
-#undef PTRDIFF_T_SUFFIX
-
-/* Define to l, ll, u, ul, ull, etc., as suitable for constants of type
-   'sig_atomic_t'. */
-#undef SIG_ATOMIC_T_SUFFIX
-
-/* Define as the maximum value of type 'size_t', if the system doesn't define
-   it. */
-#ifndef SIZE_MAX
-# undef SIZE_MAX
-#endif
-
-/* Define to l, ll, u, ul, ull, etc., as suitable for constants of type
-   'size_t'. */
-#undef SIZE_T_SUFFIX
-
 /* Define to 1 if all of the C90 standard headers exist (not just the ones
    required in a freestanding environment). This macro is provided for
    backward compatibility; new code need not use it. */
@@ -235,14 +172,6 @@
 
 /* Version number of package */
 #undef VERSION
-
-/* Define to l, ll, u, ul, ull, etc., as suitable for constants of type
-   'wchar_t'. */
-#undef WCHAR_T_SUFFIX
-
-/* Define to l, ll, u, ul, ull, etc., as suitable for constants of type
-   'wint_t'. */
-#undef WINT_T_SUFFIX
 
 /* True if the compiler says it groks GNU C version MAJOR.MINOR.  */
 #if defined __GNUC__ && defined __GNUC_MINOR__
@@ -283,15 +212,6 @@
 # endif
 #endif
 
-
-/* For standard stat data types on VMS. */
-#undef _USE_STD_STAT
-
-/* Define to 1 if the system <stdint.h> predates C++11. */
-#undef __STDC_CONSTANT_MACROS
-
-/* Define to 1 if the system <stdint.h> predates C++11. */
-#undef __STDC_LIMIT_MACROS
 
 /* The _GL_ASYNC_SAFE marker should be attached to functions that are
    signal handlers (for signals other than SIGABRT, SIGPIPE) or can be
@@ -716,15 +636,6 @@
    avoids conditional jumps in all GCC versions >= 3.4.  */
 #define _GL_CMP(n1, n2) (((n1) > (n2)) - ((n1) < (n2)))
 
-
-/* Define to `int' if <sys/types.h> does not define. */
-#undef mode_t
-
-/* Define as a signed integer type capable of holding a process identifier. */
-#undef pid_t
-
-/* Define as a signed type of the same size as size_t. */
-#undef ssize_t
 
 #ifndef HAVE_C_BOOL
 # if !defined __cplusplus && !defined __bool_true_false_are_defined

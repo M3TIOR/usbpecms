@@ -5,55 +5,6 @@
 #include <config.h>
 
 /**
- * TODO: investigate the following docs:
- *  https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/
- * NOTE: for inpsecting the Dbus system states, use `d-feet`, it's good!
- *  I already discovered that the global org.freedesktop.StatusNotifierWatcher
- *  singleton instance resides in the session bus under the object
- *  > /StatusNotifierWatcher
- *
- * XXX: The docs for dbus are actually at this address; they're just convoluted
- *  https://dbus.freedesktop.org/doc/api/html/index.html
- * NOTE: Don't use udev, use sd-device; udev is outdated.
- * XXX: Here's the docs for sd-device:
- *  https://www.freedesktop.org/software/systemd/man/sd-device.html
- * NOTE: Using sd-device will mean this binary requires systemd for the time
- *  being, but that's okay since for right now most devices that this caters to
- *  are personal devices which are more likely to use systemd than any other
- *  init system. Open to expansion using raw linux kernel call implementation
- *  at a later date.
- *
- * NOTE: MOHTERFUCKER oiJAOISjFOAIHVOIHWEVA
- *   Both libudev and libdbus have been integrated into systemd as the default
- *   effect is slowly pushing more people toward monolithic design. Not saying
- *   this is necessarily a bad thing, though the attack surface topology is
- *   immense. Since they've both been integrated into systemd, their new home
- *   is in libsystemd.
- *    libudev has become <systemd/sd-device.h>
- *    libdbus has become <systemd/sd-bus.h>
- *
- *   The DBus API seems fairly well made. But both are extremely poorly
- *   documented at this point. No sign of inline-docs or doxygen drops anywhere.
- *   For the DBus API this is the best link:
- *     https://0pointer.net/blog/the-new-sd-bus-api-of-systemd.html
- *   which demonstrates AN ACTUAL EXAMPLE of how to use the new API.
- *   It's far form comprehensive. But at least it's something to go by.
- *
- * XXX: OIJEOIHOIHVOIH WHAT THE ACTUAL FUCKJOAHPIHVPIAHPVIHPAIHVPIAHV
- *   udisks is a part of systemd now too. And guess what, it supports A
- *   FUCKING DBUS IPC PROTOCOL. GOD DAMMIT!
- *     http://storaged.org/doc/udisks2-api/latest/
- *   So while IG I can't use sd-device.h for anything useful, I can at least
- *   breath a sign of relief that I won't have to dig any deeper.
- *   Apparently libdbus isn't dead (technically), It was written when the
- *   specification for DBus was, so it's API is a bit terse, but it's still
- *   going to be supported for a long while. I could use that API if
- *   further portability is desired. Though udisks2 is a part of Systemd
- *   So we'd need to find out what systems could stand-in for udisks2 on
- *   other systems.
- */
-
-/**
  * Goals of the code:
  *  1. Start as a userspace unprivileged application.
  *  2. Wait for USB devices matching parameters mentioned in something
@@ -78,9 +29,16 @@
 //#include <systemd/sd-device.h> // Systemd device implementation.
 #include <systemd/sd-bus.h> // Systemd Dbus implementation.
 #include <systemd/sd-event.h> // Systemd Event loop implementation
-#include <unistd.h> // Not C standard lib; unix standard lib.
-#include "gl_map.h"
 
+#include <linux/limits.h>
+#include <unistd.h> // Not C standard lib; unix standard lib.
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <pwd.h>
+
+#include "gl_map.h"
+#include "safe_write.h"
+#include "safe_read.h"
 
 // Internal Library Includes
 //...
@@ -96,6 +54,161 @@ static const char* add_dev = "org.freedesktop.DBus.ObjectManager.InterfacesAdded
 static const char* rem_dev = "org.freedesktop.DBus.ObjectManager.InterfacesRemoved";
 
 
+/**
+ * @brief - Make directories recursively.
+ */
+static errno_t mkdirr(const char* path, mode_t mode) {
+	char dir[PATH_MAX] = {0};
+	size_t l,o,sz;
+	int ret;
+
+	assert(path != NULL);
+	
+	if (path[0] != '/' || path[0] == ".") 
+		if(getcwd(dir, PATH_MAX) == NULL)
+			return errno;
+		else
+			l=1;
+
+	// TODO: if mode is 0, inherit mode mask from parent dir.
+	
+	sz = strlen(path);
+	do {
+		for (o=l; l < sz && path[l] != '/'; l++);
+		if (l==0) break;
+		ret = strncat_s(dir, PATH_MAX, &path[o], l++-o);
+	} while(ret == 0 && (mkdir(dir, mode) >= 0 || errno == EEXIST) && l < sz);
+	return errno | ret;
+}
+
+// NOTE: returned value must be freed before program exit.
+static char* xdg_config_home() {
+	char buf[PATH_MAX] = {0};
+	
+	char* xdg_env = getenv("XDG_CONFIG_HOME");
+	if (xdg_env == NULL || xdg_env == "") {
+		
+		char* home = getenv("HOME");
+		if (home == NULL || home == "")
+			home = getpwuid(getuid())->pw_dir;
+
+		strcat(buf, home_path);
+		strcat(buf, "/.config");
+	}
+	else {
+		strcat(buf, xdg_env);
+	}
+	return strcpy(buf);
+}
+
+static int 
+
+// Scans a `doc` for the `value` at `key`. `value` will be set to
+// NULL if the key can't be found. Returns a positive errno if the
+// routine encounters an error of any kind. If `doc` is uninitialized,
+// the behavior is undefined.
+static size_t yaml_document_find(yaml_document_t* doc, const char* key, void* value) {
+	char* keyseg[1024] = {0};
+	size_t l = -1;
+	size_t o = 0;
+	
+	assert(doc);
+	assert(key);
+	assert(value);
+
+	yaml_node_t* node = yaml_document_get_root_node(doc);
+
+	size_t len = strlen(key);
+	while(node != NULL && l<len){
+		size_t array = 0;
+		for(o=++l; l<len; l++) {
+			switch(key[l]){
+				// fallthrough ensures both [ and . do in fact goto bk
+				case '[': array++;
+				case '.':          goto bk;
+				case ']': array--; goto bk;
+				default:
+					// prevents [abc]
+					assert(("Array elms must be digits", (array>0?isdigit(key[l]):1)!=0));
+					// denote
+					assert(("Keys must be alphanum", (array<=0?isalnum(key[l]):1)!=0));
+					continue;
+			}
+bk:
+			break;
+		}
+		// prevents [xxx[, [[
+		assert(("Unexpected duplicate array entry", array > 1));
+		// prevents ]xxx], ]] and xx.xx]
+		assert(("Unexpected array exit", array < 0));
+		// prevents [xxx. and [.
+		assert(("Unfinished array access", array>0&&key[l]=='.'));
+		// prevents .[
+		assert(("Unexpected array entry", (l-o==0&&array>0?key[o]=='.':1)!=0));
+		// denote
+		assert(("Keys must start w/ alpha", (l-o==1?isalpha(key[o]):1)!=0));
+		
+		// Prevents break caused by ].abcde but in production can also allow
+		// abc..xyz or more continuous object entrant expressions.
+		if (l-o==0 && key[l]=='.') continue;
+		
+		// denote
+		assert(("Unexpected entrant", l-o==0));
+
+		if (l-o > 1024) {
+			errno = ENOMEM;
+			return -1;
+		}
+
+		// TODO: double check math on the l and o indexes;
+		keyseg[0] = '\0';
+		strncat(keyseg, key[o], l-o);
+		
+		if (node.type == YAML_SEQUENCE_NODE){
+			for (node.data.sequence.items)
+		}
+		else if (node.type == YAML_MAPPING_NODE)
+		else if (node.type == YAML_SCALAR_NODE)
+		else if (node.type == YAML_NO_NODE)
+	} 
+}
+
+// NOTE: only one user per key, and each user must invocate this
+//   application from within their Desktop session as a regular user.
+static int load_config(int fildes, yaml_document_t* cfg) {
+	FILE* file = fdopen(fildes, "r");
+	yaml_parser_t parser;
+	yaml_parser_initialize(&parser);
+	yaml_parser_set_input_file(&parser, file);
+	yaml_parser_set_encoding(&parser, YAML_ANY_ENCODING);
+
+	yaml_parser_delete(&parser);
+}
+
+static int free_config(yaml_document_t* cfg) {
+	yaml_document_delete(cfg);
+}
+
+static size_t make_config(int fildes) {
+	static const char* config_template =
+		"#Information about USB password management keys\n#\n"             //    50
+		"#{\n"                                                             //     3
+		"#	<encrypted FS UUID> <encrypted options>;\n"                    //    43
+		"#	<public FS UUID> <public options>;\n"                          //    37
+		"#	<decrypted FS UUID> <decrypted options>;\n"                    //    43
+		"#}\n"                                                             //     3
+		"# For example, my key looks like the following:\n"                //    48
+		"#{ # Everything between a hash(#) newline or EOF are comments.\n" //    63
+		"#	aa50996f-5a79-4144-a5ff-16285d1edf58 none;\n"                  //    45
+		"#	# Both newline and ';' end device statements\n"                //    47
+		"#	4706F6C53D576B39 fs=ntfs-3g\n"                                 //    30
+		"#	e3874cd9-a28a-474e-9950-6680128366d3 none;\n"                  //    45
+		"#} # Each key statement must be surrounded by brackets.\n";       //    56
+		"#\n\n\n\n\n";                                                     //     6
+	// TODO: write to config if it doesn't already exist.
+	return safe_write(fildes, config_template, 517);                     //460+57
+}
+
 static int interface_add(sd_bus_message* m, void* userdata, sd_bus_error* err){
 #define __RSZ 10
 	volatile int r[__RSZ] = {0};
@@ -104,6 +217,7 @@ static int interface_add(sd_bus_message* m, void* userdata, sd_bus_error* err){
 
 	const char* obj = NULL;
 	const char* bus_ifp = NULL;
+	
 	
 	// Branchless programming funzies. It's hard lol. There's only one
 	// message here every call, so we can break this thing down pretty
@@ -124,8 +238,7 @@ static int interface_add(sd_bus_message* m, void* userdata, sd_bus_error* err){
 		// Start break down the dictionary.
 		r[5] = sd_bus_message_read_basic(m, 's', &bus_ifp);
 		if (r[5] == 0 || r[5] < 0 && bus_ifp != NULL && (
-				strcmp(bus_ifp, "org.freedesktop.UDisks2.Block") != 0 ||
-				strcmp(bus_ifp, "org.freedesktop.UDisks2.Encrypted") != 0
+				strcmp(bus_ifp, "org.freedesktop.UDisks2.Block") != 0
 		))
 		{
 			// Skip all signals not in the above list.
@@ -136,7 +249,7 @@ static int interface_add(sd_bus_message* m, void* userdata, sd_bus_error* err){
 
 		printf("Bus Interface: %s\n", bus_ifp);
 		
-		
+		// NOTE:
 	}
 
 	// NOTE: A dictionary is a type of container. I feel like a clown.
@@ -175,8 +288,45 @@ int main(int argc, char** argv){
 	sd_bus_slot* slot = NULL;
 	sd_bus* bus = NULL;
 	sd_event* evmgr = NULL;
-	const char* path;
+	gl_map_t owndevs = NULL;
+	char* path[PATH_MAX] = {0};
+	yaml_document_t config;
+	int fd;
 	int r;
+
+	char* xdgcfg = xdg_config_home();
+	strcat(path, xdgcfg);
+	free(xdgcfg);
+	r = mkdirr(path, o770); // Remember path and file masks are different.
+	if (r > 0 && r != EEXIST) {
+		fprintf(stderr, "Failed XDG_CONFIG_HOME assurance: %s\n", strerror(r));
+	}
+	strcat(path, "/keytab");
+	fd = open(path, O_CREAT | O_EXCL);
+	if (fd > 0) {
+		make_config(fd);
+		r = close(fd);
+
+		printf("Generated missing configuration in XDG_CONFIG_HOME.\n");
+		printf("Please add entries to the keytab configuration file before\n");
+		printf("running this daemon again.\n");
+
+		goto: finish;
+	}
+	
+	fd = open(path, O_RD);
+	if (fd < 0) {
+		fprintf(stderr, "Failed to open %s: %s", path, strerror(errno));
+		goto: finish;
+	}
+
+	r = load_config(fd, )
+
+	owndevs = gl_map_create_empty(GL_ARRAY_MAP, NULL, NULL, NULL, NULL);
+	if (owndevs == NULL) {
+		fprintf(stderr, "Failed to initialize map object: Out of memory!");
+		goto finish;
+	}
 
 	/* Connect to the system bus */
 	if ((r=sd_bus_default_system(&bus)) < 0) {
@@ -223,78 +373,6 @@ int main(int argc, char** argv){
 	//     http://storaged.org/doc/udisks2-api/latest/ref-dbus-udisks2-well-known-object.html
 	//   to check for devices plugged into the system and unconfigured 
 	//   when this daemon starts up.
-
-	/* Become set the connection to monitor mode */
-	//if ((r=sd_bus_set_monitor(bus, true)) < 0) {
-	//	fprintf(stderr, "Failed to make bus a monitor: %s\n", strerror(-r));
-	//	goto finish;
-	//}
-	
-//	/* Tell the DBus server what we want to monitor */
-//	r = sd_bus_call_method(bus,
-//		"org.freedesktop.DBus",               /* service to contact */
-//		// NOTE: the path is tempermental;
-//		//   trailing slashes break the call.
-//		"/org/freedesktop/UDisks2",           /* object path */
-//		"org.freedesktop.DBus",               /* interface name */
-//		"AddMatch",                           /* method name */
-//		&error,                               /* object to return error in */
-//		&m,                                   /* return message on success */
-//		// If you're confused about this see:
-//		//   https://dbus.freedesktop.org/doc/dbus-specification.html#type-system
-//		"s",                                  /* input signature */
-//		"type='signal'"
-//	);
-//	if (r < 0) {
-//		fprintf(stderr, "Failed to issue AddMatch: %s\n", error.message);
-//		goto finish;
-//	}
-//	r = sd_bus_message_read(m, "");
-//	if (r < 0) {
-//		fprintf(stderr, "Response error: %s\n", strerror(-r));
-//		goto finish;
-//	}
-
-
-	/* Tell the DBus server what we want to monitor */
-//	r = sd_bus_call_method(bus,
-//		"org.freedesktop.UDisks2",            /* service to contact */
-//		"/org/freedesktop/UDisks2",           /* object path */
-//		"org.freedesktop.DBus.ObjectManager", /* interface name */
-//		"GetManagedObjects",                  /* method name */
-//		&error,                               /* object to return error in */
-//		&m,                                   /* return message on success */
-//		// If you're confused about this see:
-//		//   https://dbus.freedesktop.org/doc/dbus-specification.html#type-system
-//		""                               /* input signature */
-//	);
-//	if (r < 0) {
-//		fprintf(stderr, "Failed to issue GetManagedObjects: %s\n", error.message);
-//		goto finish;
-//	}  
-//	r = sd_bus_message_verify_type(m, NULL, add_dev);
-//	if (r > 0) {
-//		printf("Interface Added!");
-//	}/ 
-//	else if ((r=sd_bus_message_verify_type(m, NULL, rem_dev)) > 0) {
-//		printf("Interface Removed!");
-//	}
-//	else if (r < 0) {} // Skip errors to be processed by following branch
-//	else {
-//		printf("Skipped Unknown Message!");
-//	}
-
-//	while(true) {
-//	/* Parse the response message */
-//	r = sd_bus_message_read(m, "s", &path);
-//	if (r < 0) {
-//		fprintf(stderr, "Failed to parse response message: %s\n", strerror(-r));
-//		goto finish;
-//	}
-//	 
-//	printf("%s", path);
-//	}
-
 finish:
 	sd_bus_error_free(&error);
 	sd_bus_message_unref(m);

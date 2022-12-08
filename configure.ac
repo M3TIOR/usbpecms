@@ -3,6 +3,7 @@ AC_INIT([usbpecms], [0.0.0], [https://github.com/m3tior/usbpecms])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 AC_CONFIG_MACRO_DIRS([m4])
 
+ARCH="$(uname -m)";
 AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_HEADERS([config.h:config.h.in])
 
@@ -31,4 +32,5 @@ AC_CONFIG_FILES([
 	Makefile
 	src/Makefile
 ])
+
 AC_OUTPUT
